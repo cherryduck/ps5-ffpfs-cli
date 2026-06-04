@@ -20,7 +20,60 @@ import shutil
 import json
 import re
 import tempfile
+import contextlib
 from pathlib import Path
+
+
+def same_drive(path_a: Path, path_b: Path) -> bool:
+    """Check if two paths are on the same drive/filesystem.
+
+    Windows: compares drive letters.
+    Linux/WSL: compares device IDs (st_dev) for mounted drives.
+    Falls back to True if comparison can't be determined.
+    """
+    # Windows: compare drive letters
+    if hasattr(Path, "drive") and path_a.drive and path_b.drive:
+        if path_a.drive.upper() == path_b.drive.upper():
+            return True
+        return False
+
+    # Linux/WSL: compare device IDs
+    try:
+        dev_a = os.stat(path_a).st_dev
+        dev_b = os.stat(path_b).st_dev
+        return dev_a == dev_b
+    except OSError:
+        pass
+
+    # Can't determine — assume same drive (use system temp)
+    return True
+
+
+def smart_temp_base(source_path: Path) -> Path | None:
+    """Return the best temp directory base for operations on source_path.
+
+    If source is on the same drive as the system temp dir, returns None
+    (caller should use the default system temp).
+    If source is on a different drive, returns source_path.parent.
+    """
+    system_temp = Path(tempfile.gettempdir()).resolve()
+    resolved_source = source_path.resolve()
+    if same_drive(resolved_source, system_temp):
+        return None
+    return resolved_source.parent
+
+
+@contextlib.contextmanager
+def smart_temp(source_path: Path):
+    """Drop-in replacement for tempfile.TemporaryDirectory() that avoids
+    cross-drive temp operations. If the source is on a different drive than
+    the system temp, creates the temp dir in the source's parent directory."""
+    base = smart_temp_base(source_path)
+    tmpdir = tempfile.mkdtemp(dir=str(base) if base else None)
+    try:
+        yield Path(tmpdir)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 def get_title_id_from_name(name: str) -> str:
     # Look for standard PS4/PS5 title ID formats like PPSA12345 or CUSA12345
@@ -186,8 +239,8 @@ def main():
     @contextlib.contextmanager
     def prepare_source_path(path: Path):
         if _is_zip(path):
-            import tempfile, zipfile
-            with tempfile.TemporaryDirectory() as tmpdir:
+            import zipfile
+            with smart_temp(path) as tmpdir:
                 try:
                     with zipfile.ZipFile(path) as zf:
                         # Path traversal validation (same logic MkPFS used)
@@ -204,9 +257,8 @@ def main():
                     print(f"[ERROR] ZIP extraction failed: {exc}")
                     sys.exit(1)
         elif _is_rar(path):
-            import tempfile
             from unrar import rarfile
-            with tempfile.TemporaryDirectory() as tmpdir:
+            with smart_temp(path) as tmpdir:
                 try:
                     with rarfile.RarFile(path, pwd=args.password) as rf:
                         rf.extractall(tmpdir)
@@ -316,7 +368,7 @@ def main():
                 compress_file_to_ffpfsc(item, current_ffpfs_path, mkpfs_cmd_base, mkpfs_cwd)
             else:
                 # Game folder: pack to uncompressed PFS first, then compress to .ffpfsc
-                with tempfile.TemporaryDirectory() as temp_dir:
+                with smart_temp(item) as temp_dir:
                     temp_pfs = Path(temp_dir) / "pfs_image.dat"
                     
                     # 1. Pack folder into the uncompressed PFS image

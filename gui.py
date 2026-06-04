@@ -541,8 +541,8 @@ class PS5ContainerBuilderApp:
         @contextlib.contextmanager
         def prepare_source_path(path: Path):
             if _is_zip(path):
-                import tempfile, zipfile
-                with tempfile.TemporaryDirectory() as tmpdir:
+                import zipfile
+                with cli.smart_temp(path) as tmpdir:
                     try:
                         with zipfile.ZipFile(path) as zf:
                             for member in zf.infolist():
@@ -558,9 +558,8 @@ class PS5ContainerBuilderApp:
                         print(f"[ERROR] ZIP extraction failed: {exc}")
                         raise
             elif _is_rar(path):
-                import tempfile
                 from unrar import rarfile
-                with tempfile.TemporaryDirectory() as tmpdir:
+                with cli.smart_temp(path) as tmpdir:
                     try:
                         with rarfile.RarFile(path, pwd=password) as rf:
                             rf.extractall(tmpdir)
@@ -630,7 +629,7 @@ class PS5ContainerBuilderApp:
                         )
                     else:
                         # Game folder packing
-                        with tempfile.TemporaryDirectory() as temp_dir:
+                        with cli.smart_temp(item) as temp_dir:
                             temp_pfs = Path(temp_dir) / "pfs_image.dat"
 
                             # 1. Uncompressed PFS build
