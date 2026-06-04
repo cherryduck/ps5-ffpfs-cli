@@ -629,7 +629,7 @@ class PS5ContainerBuilderApp:
                         )
                     else:
                         # Game folder packing
-                        with cli.smart_temp(item) as temp_dir:
+                        with cli.smart_pfs_temp(current_ffpfs_path) as temp_dir:
                             temp_pfs = Path(temp_dir) / "pfs_image.dat"
 
                             # 1. Uncompressed PFS build
