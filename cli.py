@@ -64,41 +64,11 @@ def smart_temp_base(source_path: Path) -> Path | None:
     return resolved_source.parent
 
 
-def smart_pfs_temp_base(output_path: Path) -> Path | None:
-    """Return the best temp directory base for intermediate PFS images.
-
-    The intermediate PFS file is passed to mkpfs for compression, which
-    tries to hard-link it. Hard links require the same drive, so the temp
-    dir must live on the same drive as the output file.
-
-    If output is on the same drive as system temp, returns None (use default).
-    Otherwise returns output_path.parent.
-    """
-    system_temp = Path(tempfile.gettempdir()).resolve()
-    resolved_output = output_path.resolve()
-    if same_drive(resolved_output, system_temp):
-        return None
-    return resolved_output.parent
-
-
 @contextlib.contextmanager
 def smart_temp(source_path: Path):
     """Drop-in replacement for tempfile.TemporaryDirectory() that avoids
     cross-drive temp operations. Used for archive extraction."""
     base = smart_temp_base(source_path)
-    tmpdir = tempfile.mkdtemp(dir=str(base) if base else None)
-    try:
-        yield Path(tmpdir)
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@contextlib.contextmanager
-def smart_pfs_temp(output_path: Path):
-    """Temp directory for intermediate PFS images. Placed on the same
-    drive as the output file so mkpfs can hard-link the PFS during
-    compression staging."""
-    base = smart_pfs_temp_base(output_path)
     tmpdir = tempfile.mkdtemp(dir=str(base) if base else None)
     try:
         yield Path(tmpdir)
@@ -398,7 +368,7 @@ def main():
                 compress_file_to_ffpfsc(item, current_ffpfs_path, mkpfs_cmd_base, mkpfs_cwd)
             else:
                 # Game folder: pack to uncompressed PFS first, then compress to .ffpfsc
-                with smart_pfs_temp(current_ffpfs_path) as temp_dir:
+                with tempfile.TemporaryDirectory() as temp_dir:
                     temp_pfs = Path(temp_dir) / "pfs_image.dat"
                     
                     # 1. Pack folder into the uncompressed PFS image
