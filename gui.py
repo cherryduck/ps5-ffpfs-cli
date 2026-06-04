@@ -167,7 +167,7 @@ class PS5ContainerBuilderApp:
         ctk.CTkLabel(fields_frame, text="Output destination:", font=ctk.CTkFont(weight="bold")).grid(
             row=1, column=0, padx=12, pady=10, sticky="e"
         )
-        self.output_var = tk.StringVar()
+        self.output_var = tk.StringVar(value=str(Path(".").resolve()))
         self.output_entry = ctk.CTkEntry(
             fields_frame, 
             textvariable=self.output_var,
@@ -293,12 +293,19 @@ class PS5ContainerBuilderApp:
             self.options_frame.grid(row=2, column=1, columnspan=2, padx=6, pady=6, sticky="w")
 
     def _browse_folder(self) -> None:
-        path = filedialog.askdirectory()
+        initial = self.source_var.get() or str(Path(".").resolve())
+        path = filedialog.askdirectory(initialdir=initial)
         if path:
             self.source_var.set(path)
             
     def _browse_file(self) -> None:
+        initial = self.source_var.get() or str(Path(".").resolve())
+        if initial:
+            p = Path(initial)
+            if p.is_file():
+                initial = str(p.parent)
         path = filedialog.askopenfilename(
+            initialdir=initial,
             filetypes=[
                 ("exFAT files", "*.exfat"),
                 ("ZIP files", "*.zip"),
@@ -312,7 +319,8 @@ class PS5ContainerBuilderApp:
             self.source_var.set(path)
             
     def _browse_destination(self) -> None:
-        path = filedialog.askdirectory()
+        initial = self.output_var.get() or str(Path(".").resolve())
+        path = filedialog.askdirectory(initialdir=initial)
         if path:
             self.output_var.set(path)
 

@@ -6,7 +6,7 @@ Mirrors the subset of the `rarfile` library API used by ps5-ffpfs-cli.
 import os
 from pathlib import Path
 
-from unrar import _unrar
+from . import _unrar
 
 
 class BadRarFile(Exception):
