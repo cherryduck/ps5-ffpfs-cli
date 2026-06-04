@@ -346,12 +346,12 @@ class PS5ContainerBuilderApp:
         chunks = []
         try:
             while True:
-                text, _tag = self.log_queue.get_nowait()
-                chunks.append(text)
+                chunks.append(self.log_queue.get_nowait())
         except queue.Empty:
             pass
         if chunks:
-            self._append_log("".join(chunks))
+            for text, tag in chunks:
+                self._append_log(text, tag)
         self.log_after_id = self.root.after(100, self._poll_log_queue)
 
     def _poll_progress_queue(self) -> None:
@@ -383,7 +383,7 @@ class PS5ContainerBuilderApp:
             self._on_worker_done(name, is_success)
         self.completion_after_id = self.root.after(100, self._poll_completion_queue)
 
-    def _append_log(self, text: str) -> None:
+    def _append_log(self, text: str, source_tag: str = "info") -> None:
         self.log_text.configure(state="normal")
         lines = text.split("\n")
         for i, line in enumerate(lines):
@@ -405,6 +405,8 @@ class PS5ContainerBuilderApp:
                 self.log_text.insert("end", line + suffix, "warning")
             elif any(term in line.lower() for term in ("successfully", "completed", "passed")):
                 self.log_text.insert("end", line + suffix, "success")
+            elif source_tag == "error":
+                self.log_text.insert("end", line + suffix, "error")
             else:
                 self.log_text.insert("end", line + suffix, "info")
 
@@ -480,16 +482,17 @@ class PS5ContainerBuilderApp:
             print("[INFO] Running in packaged/frozen environment. Using internal MkPFS bundle.")
 
         # 1. Prioritize any local workspace found in sibling folders containing a mkpfs package
-        parent_dir = Path(__file__).resolve().parent.parent
-        try:
-            for sibling in parent_dir.iterdir():
-                if sibling.is_dir() and (sibling / "mkpfs" / "__main__.py").is_file():
-                    mkpfs_cmd_base = [sys.executable, "-m", "mkpfs"]
-                    mkpfs_cwd = str(sibling)
-                    print(f"[INFO] Using local workspace directory at {sibling}")
-                    break
-        except Exception:
-            pass
+        if mkpfs_cmd_base is None:
+            parent_dir = Path(__file__).resolve().parent.parent
+            try:
+                for sibling in parent_dir.iterdir():
+                    if sibling.is_dir() and (sibling / "mkpfs" / "__main__.py").is_file():
+                        mkpfs_cmd_base = [sys.executable, "-m", "mkpfs"]
+                        mkpfs_cwd = str(sibling)
+                        print(f"[INFO] Using local workspace directory at {sibling}")
+                        break
+            except Exception:
+                pass
 
         # 2. Try system PATH
         if mkpfs_cmd_base is None and shutil.which("mkpfs"):
@@ -507,7 +510,7 @@ class PS5ContainerBuilderApp:
 
         # Handle Archives directly (no external binary dependencies)
         _is_zip = lambda p: p.name.lower().endswith(".zip")
-        _is_rar = lambda p: any(p.name.lower().endswith(ext) for ext in (".rar", ".r00", ".001", "part1.rar"))
+        _is_rar = lambda p: any(p.name.lower().endswith(ext) for ext in (".rar", ".r00"))
         is_archive = _is_zip(source_path) or _is_rar(source_path)
         
         import contextlib
@@ -525,7 +528,7 @@ class PS5ContainerBuilderApp:
                                 except ValueError:
                                     print(f"[ERROR] ZIP path traversal detected: {member.filename}")
                                     raise
-                            zf.extractall(tmpdir)
+                            zf.extractall(tmpdir, pwd=password.encode() if password else None)
                         yield Path(tmpdir)
                     except (zipfile.BadZipFile, RuntimeError) as exc:
                         print(f"[ERROR] ZIP extraction failed: {exc}")
@@ -638,7 +641,10 @@ class PS5ContainerBuilderApp:
                         break
 
                 return success and not self.is_cancelled
-        except Exception:
+        except Exception as e:
+            print(f"[ERROR] Exception during packing: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def run_command_stream(self, cmd: list[str], cwd: str | None = None) -> bool:

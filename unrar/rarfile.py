@@ -71,14 +71,12 @@ class RarFile:
         dest = str(path)
 
         # Validate member paths before extraction (defense-in-depth)
+        dest_resolved = Path(dest).resolve()
         for info in self.infolist():
-            name = info.filename.replace("\\", "/")
-            if (
-                name.startswith("/")
-                or name.startswith("../")
-                or "/../" in name
-                or name.endswith("/..")
-            ):
+            member_path = (dest_resolved / info.filename).resolve()
+            try:
+                member_path.relative_to(dest_resolved)
+            except ValueError:
                 raise BadRarFile(f"Unsafe path in archive: {info.filename}")
 
         try:
